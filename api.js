@@ -90,28 +90,6 @@ class Aggregator {
     this._level = level;
   }
 
-  paint(context, transformation) {
-
-    const levelMeta = this._levelMeta[this._level];
-    if (!this._buckets[levelMeta.startIndex]) {
-      console.log("aggregation not calculated");
-      this._initializeBucketsForLevel(this._level);
-      this._seed(this._level);
-    }
-
-    let bucket = this._buckets[levelMeta.startIndex];
-    context.beginPath();
-    transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
-
-    context.moveTo(this._tmpPoint.x, this._tmpPoint.y);
-    for (let i = 1; i < levelMeta.numberOfBuckets; i += 1) {
-      bucket = this._buckets[levelMeta.startIndex + i];
-      transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
-      context.lineTo(this._tmpPoint.x, this._tmpPoint.y);
-    }
-    context.stroke();
-
-  }
 }
 
 
@@ -123,7 +101,26 @@ this.createSampleData = function (size) {
       y: Math.random()
     };
   }
-  return sampleData;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (let i = 0; i < size; i += 1) {
+    minX = Math.min(minX, sampleData[i].x);
+    maxX = Math.max(maxX, sampleData[i].x);
+  }
+
+
+  const levelsOfDetailBasedOnAll = Math.ceil(Math.log(maxX - minX) / Math.log(2));
+  const levelsOfDetailBasedOnPixels = Math.log(1024 * 4) / Math.log(2);//assume 1024 pixels
+
+  const levels = Math.min(levelsOfDetailBasedOnAll, levelsOfDetailBasedOnPixels);
+
+  return {
+    levels: levels,
+    sampleData: sampleData,
+    minX: minX,
+    maxX: maxX
+  };
+
 };
 
 

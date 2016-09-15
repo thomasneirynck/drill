@@ -131,32 +131,29 @@ class Map extends Evented {
 
 class Histogram extends Evented {
 
-  constructor(sampleData) {
+  constructor(number) {
+
     super();
 
-    this._sampleData = sampleData;
+    this._workerHandle = promisifyWorker(new Worker('worker.js'));
 
+    console.log('posting');
 
-    this._minX = Infinity;
-    this._maxX = -Infinity;
-    for (let i = 0; i < this._sampleData.length; i += 1) {
-      this._minX = Math.min(this._minX, this._sampleData[i].x);
-      this._maxX = Math.max(this._maxX, this._sampleData[i].x);
-    }
+    this._workerHandle.postMessage({
+      type: 'create',
+      nrOfItems: number
+    }).then(reponse => {
+      console.log('shit created....', reponse);
+      this.emitEvent('invalidate');
+    })
 
-
-    const levelsOfDetailBasedOnAll = Math.ceil(Math.log(this._maxX - this._minX) / Math.log(2));
-    const levelsOfDetailBasedOnPixels = Math.log(1024 * 4) / Math.log(2);//assume 1024 pixels
-
-    this._levels = Math.min(levelsOfDetailBasedOnAll, levelsOfDetailBasedOnPixels);
-    this._aggregator = new Aggregator(this._sampleData, this._levels);
 
   }
 
 
   paint(context, transformation) {
     context.strokeStyle = 'rgb(255,0,0)';
-    this._aggregator.paint(context, transformation);
+    // this._aggregator.paint(context, transformation);
   }
 
   getLevels(level) {
@@ -171,19 +168,37 @@ class Histogram extends Evented {
 }
 
 
+/**
+ * only works if worker posts reponse for each request in order they were received.
+ */
+function promisifyWorker(worker) {
+
+  return {
+
+    postMessage: function (message) {
+      return new Promise((resolve, reject) => {
+        worker.addEventListener('message', function onMessage(workerMessage) {
+          worker.removeEventListener('message', onMessage);
+          resolve(workerMessage.data);
+        });
+        worker.postMessage(message);
+
+      });
+    }
+  };
+}
+
+
+
 /************************************************************************************************************************/
 
 (function () {
 
   const map = new Map("map");
+  const nrOfItems = 100024;
+  const histogram = new Histogram(nrOfItems);
 
-  const items = 100024;
-  const sampleData = createSampleData(items);
-  const histogram = new Histogram(sampleData);
-  map.setTransformation(map.getWidth() / items, map.getHeight() * -1, 0, map.getHeight());
-
-
-  window.histo = histogram;
+  map.setTransformation(map.getWidth() / nrOfItems, map.getHeight() * -1, 0, map.getHeight());
   map.addLayer(histogram);
 
 
@@ -196,17 +211,7 @@ class Histogram extends Evented {
   });
 
 
-  const worker = new Worker('worker.js');
 
-
-  worker.onmessage = function (event) {
-    console.log('received', event.data);
-  };
-
-
-  worker.postMessage(Date.now());
-  worker.postMessage(Date.now());
-  console.log(worker);
 
 
 }());
