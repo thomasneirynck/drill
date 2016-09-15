@@ -22,8 +22,8 @@ class Evented {
   }
 
   emitEvent(name, event) {
-    for (let i = 0; i < this._e_listeners; i += 1) {
-      this._e_listeners[i](event);
+    for (let i = 0; i < this._e_listeners[name].length; i += 1) {
+      this._e_listeners[name][i](event);
     }
   }
 }
@@ -79,6 +79,7 @@ class Map extends Evented {
     this._transformation = new AffineTransformation();
 
     this._layers = [];
+    window.addEventListener('resize', this.resize.bind(this));
   }
 
   addLayer(layer) {
@@ -128,132 +129,12 @@ class Map extends Evented {
 }
 
 
-class Aggregator {
-
-  constructor(xyValues, levels) {
-
-    this._xyValues = xyValues.slice().sort((object1, object2) => {
-      return object2.x - object1.x;
-    });
-
-    this._minX = Infinity;
-    this._maxX = -Infinity;
-    for (let i = 0; i < this._xyValues.length; i += 1) {
-      this._minX = Math.min(this._minX, this._xyValues[i].x);
-      this._maxX = Math.max(this._maxX, this._xyValues[i].x);
-    }
-
-
-    console.log('levels', levels);
-    this._buckets = new Array(2 * Math.pow(2, levels - 1) - 1); //1st value is number of items, second value is aggregation
-    this._initializeLevelMeta(levels);
-
-
-    for (let level = 0; level < this._levelMeta.length; level += 1) {
-      this._initializeBucketsForLevel(level);
-    }
-
-    this._level = levels - 1;
-    this._seed(this._level);//seed with most detailed level
-
-    this._tmpPoint = {x: 0, y: 0};
-
-  }
-
-
-  _initializeLevelMeta(levels) {
-    this._levelMeta = new Array(levels);
-    let startIndex = 0;
-    let numberOfBuckets = 1;
-    for (let level = 0; level < this._levelMeta.length; level += 1) {
-      this._levelMeta[level] = {
-        startIndex: startIndex,
-        numberOfBuckets: numberOfBuckets,
-        bucketWidth: (this._maxX - this._minX) / numberOfBuckets
-      };
-      startIndex = startIndex + numberOfBuckets;
-      numberOfBuckets *= 2;
-    }
-  }
-
-  _initializeBucketsForLevel(level) {
-    for (let i = 0; i < this._levelMeta[level].numberOfBuckets; i += 1) {
-      this._buckets[this._levelMeta[level].startIndex + i] = {
-        count: 0,
-        aggregation: undefined,
-        xStart: this._minX + this._levelMeta[level].bucketWidth * i
-      };
-    }
-  }
-
-  _seed(level) {
-
-    let bucket = this._levelMeta[level].startIndex;
-    let bucketEnd = this._minX + this._levelMeta[level].bucketWidth;
-    for (let i = 0; i < this._xyValues.length; i += 1) {
-      if (this._xyValues[i].x > bucketEnd) {
-        bucketEnd += this._levelMeta[level].bucketWidth;
-        bucket += 1;
-      }
-      this._seedBucket(this._buckets[bucket], this._xyValues[i].y);
-    }
-  }
-
-  _seedBucket(bucket, value) {
-    if (typeof bucket.aggregation === 'undefined') {
-      bucket.aggregation = -Infinity;
-    }
-    this._accumulateIntoBucket(bucket, 1, value);
-  }
-
-
-  _accumulateIntoBucket(bucket, countOther, aggregationOther) {
-    bucket.count += countOther;
-    bucket.aggregation = Math.max(aggregationOther, bucket.aggregation);
-  }
-
-  setLevel(level) {
-    this._level = level;
-  }
-
-  paint(context, transformation) {
-
-    const levelMeta = this._levelMeta[this._level];
-    if (!this._buckets[levelMeta.startIndex]) {
-      console.log("aggregation not calculated");
-      return;
-    }
-
-    let bucket = this._buckets[levelMeta.startIndex];
-    context.beginPath();
-    transformation.forwardXY(bucket.xStart, bucket.aggregation, this._tmpPoint);
-
-
-    context.moveTo(this._tmpPoint.x, this._tmpPoint.y);
-    for (let i = 1; i < levelMeta.numberOfBuckets; i += 1) {
-      bucket = this._buckets[levelMeta.startIndex + i];
-      transformation.forwardXY(bucket.xStart, bucket.aggregation, this._tmpPoint);
-      context.lineTo(this._tmpPoint.x, this._tmpPoint.y);
-    }
-    context.stroke();
-
-
-  }
-}
-
-
 class Histogram extends Evented {
 
-  constructor(size) {
+  constructor(sampleData) {
     super();
-    this._sampleData = new Array(size);
-    for (let i = 0; i < this._sampleData.length; i += 1) {
-      this._sampleData[i] = {
-        x: i,
-        y: Math.random()
-      };
-    }
-    this._tmpPoint = {x: 0, y: 0};
+
+    this._sampleData = sampleData;
 
 
     this._minX = Infinity;
@@ -265,27 +146,26 @@ class Histogram extends Evented {
 
 
     const levelsOfDetailBasedOnAll = Math.ceil(Math.log(this._maxX - this._minX) / Math.log(2));
-    const levelsOfDetailBasedOnPixels = Math.log(1024) / Math.log(2);//assume 1024 pixels
+    const levelsOfDetailBasedOnPixels = Math.log(1024 * 4) / Math.log(2);//assume 1024 pixels
 
-    const levels = Math.min(levelsOfDetailBasedOnAll, levelsOfDetailBasedOnPixels);
-    this._aggregator = new Aggregator(this._sampleData, levels);
-
+    this._levels = Math.min(levelsOfDetailBasedOnAll, levelsOfDetailBasedOnPixels);
+    this._aggregator = new Aggregator(this._sampleData, this._levels);
 
   }
 
 
   paint(context, transformation) {
-
-
-    context.strokeStyle = 'rgb(0,0,0)';
-    for (let i = 0; i < this._sampleData.length; i += 1) {
-      transformation.forwardXY(this._sampleData[i].x, this._sampleData[i].y, this._tmpPoint);
-      context.strokeRect(this._tmpPoint.x, this._tmpPoint.y, 10, 10);
-    }
-
-
     context.strokeStyle = 'rgb(255,0,0)';
     this._aggregator.paint(context, transformation);
+  }
+
+  getLevels(level) {
+    return this._levels;
+  }
+
+  setLevel(level) {
+    this._aggregator.setLevel(level);
+    this.emitEvent("invalidate", this);
   }
 
 }
@@ -293,23 +173,43 @@ class Histogram extends Evented {
 
 /************************************************************************************************************************/
 
-const map = new Map("map");
+(function () {
 
-const items = 512;
-const histogram = new Histogram(items);
-map.setTransformation(map.getWidth() / items, map.getHeight(), 0, 0);
+  const map = new Map("map");
 
-
-window.histo = histogram;
-map.addLayer(histogram);
-
+  const items = 100024;
+  const sampleData = createSampleData(items);
+  const histogram = new Histogram(sampleData);
+  map.setTransformation(map.getWidth() / items, map.getHeight() * -1, 0, map.getHeight());
 
 
+  window.histo = histogram;
+  map.addLayer(histogram);
 
 
+  document.getElementById("detail").addEventListener("input", function (target) {
+
+    const level = Math.min(Math.round(event.target.value * histo.getLevels()), histo.getLevels() - 1);
+    histo.setLevel(level);
 
 
+  });
 
+
+  const worker = new Worker('worker.js');
+
+
+  worker.onmessage = function (event) {
+    console.log('received', event.data);
+  };
+
+
+  worker.postMessage(Date.now());
+  worker.postMessage(Date.now());
+  console.log(worker);
+
+
+}());
 
 
 
