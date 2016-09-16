@@ -19,13 +19,30 @@ class Aggregator {
 
     this._level = levels - 1;
     this._initializeBucketsForLevel(this._level);
-
-    const bef = Date.now();
     this._seed(this._level);//seed with most detailed level
-    console.log('cost of seeding', Date.now() - bef);
-
 
     this._tmpPoint = {x: 0, y: 0};
+
+  }
+
+
+  aggregate() {
+
+    const levelMeta = this._levelMeta[this._level];
+    if (!this._buckets[levelMeta.startIndex]) {
+      this._initializeBucketsForLevel(this._level);
+      this._seed(this._level);
+    }
+
+    let buckets = [];
+    for (let i = 0; i < levelMeta.numberOfBuckets; i += 1) {
+      buckets.push(this._buckets[levelMeta.startIndex + i]);
+    }
+
+    return {
+      levelMeta: levelMeta,
+      buckets: buckets
+    };
 
   }
 
@@ -58,7 +75,6 @@ class Aggregator {
   }
 
   _seed(level) {
-
     const b = Date.now();
     let bucketIndex = this._levelMeta[level].startIndex;
     let bucketEnd = this._minX + this._levelMeta[level].bucketWidth;
@@ -69,7 +85,6 @@ class Aggregator {
       }
       this._seedBucket(this._buckets[bucketIndex], this._xyValues[i].y);
     }
-    console.log('seeding', Date.now() - b);
   }
 
   _seedBucket(bucket, value) {

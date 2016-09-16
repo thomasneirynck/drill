@@ -22,6 +22,11 @@ class Evented {
   }
 
   emitEvent(name, event) {
+
+    if (!this._e_listeners[name]) {
+      return;
+    }
+
     for (let i = 0; i < this._e_listeners[name].length; i += 1) {
       this._e_listeners[name][i](event);
     }
@@ -67,12 +72,9 @@ class Map extends Evented {
     let self = this;
     this._frameHandle = -1;
     this._render = function () {
-
       self._frameHandle = -1;
-      const beforeFrame = Date.now();
       self._context.clearRect(0, 0, self._context.canvas.width, self._context.canvas.height);
       self._paint();
-      console.debug('frame time', Date.now() - beforeFrame);
     };
     this.resize();
 
@@ -136,33 +138,79 @@ class Histogram extends Evented {
     super();
 
     this._workerHandle = promisifyWorker(new Worker('worker.js'));
-
-    console.log('posting');
+    this._farked = false;
 
     this._workerHandle.postMessage({
       type: 'create',
       nrOfItems: number
-    }).then(reponse => {
-      console.log('shit created....', reponse);
+    }).then(response => {
+      console.log('got results of creation', response);
+      this._levels = response.levels;
       this.emitEvent('invalidate');
-    })
+    }).catch(error => {
+      console.error(error);
+      this._farked = true;
+    });
 
+    this._level = null;
+    this._levels = null;
+    this._results = null;
+    this._tmpPoint = {x: 0, y: 0};
+
+    this.setLevel(0);
 
   }
 
 
   paint(context, transformation) {
+
+    if (!this._results || this._farked) {
+      return
+    }
+
     context.strokeStyle = 'rgb(255,0,0)';
-    // this._aggregator.paint(context, transformation);
+
+
+    const levelMeta = this._results.levelMeta;
+    const buckets = this._results.buckets;
+
+
+    let bucket = buckets[0];
+    context.beginPath();
+    transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
+
+    context.moveTo(this._tmpPoint.x, this._tmpPoint.y);
+    for (let i = 1; i < levelMeta.numberOfBuckets; i += 1) {
+      bucket = buckets[i];
+      transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
+      context.lineTo(this._tmpPoint.x, this._tmpPoint.y);
+    }
+    context.stroke();
+
   }
 
-  getLevels(level) {
+  getLevels() {
     return this._levels;
   }
 
   setLevel(level) {
-    this._aggregator.setLevel(level);
-    this.emitEvent("invalidate", this);
+
+    if (level === this._level) {
+      return;
+    }
+
+    this._level = level;
+    this.emitEvent('invalidate', this);
+    this._workerHandle.postMessage({
+      type: 'aggregate',
+      level: this._level
+    }).then(response => {
+      this._results = response.results;
+      this.emitEvent('invalidate', this);
+    }).catch(error => {
+      this._results = null;
+      this.emitEvent('invalidate', this);
+    });
   }
 
 }
@@ -173,17 +221,53 @@ class Histogram extends Evented {
  */
 function promisifyWorker(worker) {
 
+
+  const requestQueue = [];
+  let inFlight = null;
+
+  worker.addEventListener('message', function onMessage(message) {
+    inFlight.resolve(message.data);
+    inFlight = null;
+    doNext();
+  });
+  worker.addEventListener('error', function onError(error) {
+
+    inFlight.reject(error.data);
+    inFlight = null;
+    doNext();
+  });
+
+  function doNext() {
+    if (!requestQueue.length || inFlight) {
+      return;
+    }
+    inFlight = requestQueue.pop();
+    worker.postMessage(inFlight.message)
+  }
+
+
   return {
 
-    postMessage: function (message) {
-      return new Promise((resolve, reject) => {
-        worker.addEventListener('message', function onMessage(workerMessage) {
-          worker.removeEventListener('message', onMessage);
-          resolve(workerMessage.data);
-        });
-        worker.postMessage(message);
+    terminate(worker){
+      worker.removeEventListener('message', onMessage);
+      worker.removeEventListener('error', onError);
+      worker.terminate();
+    },
 
+    postMessage(message) {
+
+      const queueItem = {message: message};
+
+      const promise = new Promise((resolve, reject) => {
+        queueItem.resolve = resolve;
+        queueItem.reject = reject;
       });
+      queueItem.promise = promise;
+      requestQueue.unshift(queueItem);
+
+      setTimeout(doNext, 0);
+      return promise;
+
     }
   };
 }
@@ -201,12 +285,17 @@ function promisifyWorker(worker) {
   map.setTransformation(map.getWidth() / nrOfItems, map.getHeight() * -1, 0, map.getHeight());
   map.addLayer(histogram);
 
+  histogram.setLevel(1);
 
   document.getElementById("detail").addEventListener("input", function (target) {
 
-    const level = Math.min(Math.round(event.target.value * histo.getLevels()), histo.getLevels() - 1);
-    histo.setLevel(level);
+    const levels = histogram.getLevels();
+    if (levels === null) {
+      return;
+    }
 
+    const level = Math.max(1,Math.min(Math.round(event.target.value * levels), levels - 1));
+    histogram.setLevel(level);
 
   });
 

@@ -8,30 +8,37 @@ let aggregator;
 
 self.onmessage = function (event) {
 
-
-
-
-
-
   if (dataLoaded) {
-    console.log('data loaded');
-  } else {
 
-    if (event.data.type === 'create') {
+    if (event.data.type === 'aggregate') {
 
-      sampleDataMeta = self.createSampleData(event.data.nrOfItems);
-      aggregator = new self.Aggregator(sampleDataMeta.sampleData, sampleDataMeta.levels);
-
+      aggregator.setLevel(event.data.level);
+      const results = aggregator.aggregate();
       self.postMessage({
-        type: 'createSuccess'
+        type: 'aggregateSuccess',
+        results: results
       });
 
-
     } else {
-      throw new Error('barf');
+      throw new Error(`cannot support ${event.data.type} when data is loaded`);
     }
 
 
+
+  } else {
+
+    if (event.data.type === 'create') {
+      sampleDataMeta = self.createSampleData(event.data.nrOfItems);
+      aggregator = new self.Aggregator(sampleDataMeta.sampleData, sampleDataMeta.levels);
+      dataLoaded = true;
+      self.postMessage({
+        type: 'createSuccess',
+        levels: sampleDataMeta.levels
+      });
+
+    } else {
+      throw new Error(`cannot support ${event.data.type} when no data is loaded`);
+    }
   }
 
 };
