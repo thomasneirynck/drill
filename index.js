@@ -47,6 +47,18 @@ class AffineTransformation {
     out.y = y * this._scaleY + this._translateY;
   }
 
+  inverseX(xP) {
+    return (xP - this._translateX) / this._scaleX;
+  }
+
+  scaleOnX(xP, scaleFactor) {
+    const newScale = this._scaleX * scaleFactor;
+    const x = this.inverseX(xP);
+    const newTranslate = xP - newScale * x;
+    this._scaleX = newScale;
+    this._translateX = newTranslate;
+  }
+
   setTransformation(scaleX, scaleY, translateX, translateY) {
     this._scaleX = scaleX;
     this._scaleY = scaleY;
@@ -76,12 +88,19 @@ class Map extends Evented {
       self._context.clearRect(0, 0, self._context.canvas.width, self._context.canvas.height);
       self._paint();
     };
+    this._transformation = new AffineTransformation();
+    this._layers = [];
+
+    this._context.canvas.addEventListener('mousewheel', mousewheelEvent => {
+      const scaleFactor = mousewheelEvent.wheelDelta > 0 ? 1.25 : 1 / 4;
+      this._transformation.scaleOnX(mousewheelEvent.offsetX, scaleFactor);
+      this._invalidate();
+    });
+
+    window.addEventListener('resize', this.resize.bind(this));
     this.resize();
 
-    this._transformation = new AffineTransformation();
 
-    this._layers = [];
-    window.addEventListener('resize', this.resize.bind(this));
   }
 
   addLayer(layer) {
@@ -128,6 +147,14 @@ class Map extends Evented {
   }
 
 
+}
+
+
+class LinePainter extends Evented {
+}
+
+
+class BarPainter extends Evented {
 }
 
 
@@ -207,6 +234,7 @@ class Histogram extends Evented {
     }).then(response => {
       this._results = response.results;
       this.emitEvent('invalidate', this);
+
     }).catch(error => {
       this._results = null;
       this.emitEvent('invalidate', this);
