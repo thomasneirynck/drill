@@ -84,15 +84,19 @@ class Map extends Evented {
     let self = this;
     this._frameHandle = -1;
     this._render = function () {
+
       self._frameHandle = -1;
+      const bef = Date.now();
       self._context.clearRect(0, 0, self._context.canvas.width, self._context.canvas.height);
       self._paint();
+      console.debug('frame time: ', Date.now() - bef);
     };
     this._transformation = new AffineTransformation();
     this._layers = [];
 
     this._context.canvas.addEventListener('mousewheel', mousewheelEvent => {
-      const scaleFactor = mousewheelEvent.wheelDelta > 0 ? 1.25 : 1 / 4;
+      const step = 1.1;
+      const scaleFactor = mousewheelEvent.wheelDelta > 0 ? step : 1 / step;
       this._transformation.scaleOnX(mousewheelEvent.offsetX, scaleFactor);
       this._invalidate();
     });
@@ -146,15 +150,14 @@ class Map extends Evented {
     return this._context.canvas.height;
   }
 
+  getWorldXFrom() {
+    return this._transformation.inverseX(0);
+  }
 
-}
+  getWorldXTo() {
+    return this._transformation.inverseX(this.getWidth());
+  }
 
-
-class LinePainter extends Evented {
-}
-
-
-class BarPainter extends Evented {
 }
 
 
@@ -171,7 +174,6 @@ class Histogram extends Evented {
       type: 'create',
       nrOfItems: number
     }).then(response => {
-      console.log('got results of creation', response);
       this._levels = response.levels;
       this.emitEvent('invalidate');
     }).catch(error => {
@@ -184,10 +186,7 @@ class Histogram extends Evented {
     this._results = null;
     this._tmpPoint = {x: 0, y: 0};
 
-    this.setLevel(0);
-
   }
-
 
   paint(context, transformation) {
 
@@ -195,23 +194,20 @@ class Histogram extends Evented {
       return
     }
 
-    context.strokeStyle = 'rgb(255,0,0)';
-
-
     const levelMeta = this._results.levelMeta;
     const buckets = this._results.buckets;
-
-
     let bucket = buckets[0];
+
     context.beginPath();
     transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
-
     context.moveTo(this._tmpPoint.x, this._tmpPoint.y);
+
     for (let i = 1; i < levelMeta.numberOfBuckets; i += 1) {
       bucket = buckets[i];
       transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
       context.lineTo(this._tmpPoint.x, this._tmpPoint.y);
     }
+    context.strokeStyle = '#778899';
     context.stroke();
 
   }
@@ -230,7 +226,9 @@ class Histogram extends Evented {
     this.emitEvent('invalidate', this);
     this._workerHandle.postMessage({
       type: 'aggregate',
-      level: this._level
+      level: this._level,
+      xFrom: null,
+      xTo: null,
     }).then(response => {
       this._results = response.results;
       this.emitEvent('invalidate', this);
@@ -301,7 +299,6 @@ function promisifyWorker(worker) {
 }
 
 
-
 /************************************************************************************************************************/
 
 (function () {
@@ -313,22 +310,18 @@ function promisifyWorker(worker) {
   map.setTransformation(map.getWidth() / nrOfItems, map.getHeight() * -1, 0, map.getHeight());
   map.addLayer(histogram);
 
-  histogram.setLevel(1);
-
-  document.getElementById("detail").addEventListener("input", function (target) {
-
+  function justifyLevel(value) {
     const levels = histogram.getLevels();
-    if (levels === null) {
-      return;
-    }
+    return Math.max(1, Math.min(Math.round(value * levels), levels - 1));
+  }
 
-    const level = Math.max(1,Math.min(Math.round(event.target.value * levels), levels - 1));
-    histogram.setLevel(level);
+  const level = justifyLevel(document.getElementById("detail").value);
+  histogram.setLevel(level, map.getWorldXFrom(), map.getWorldXTo());
 
+  document.getElementById("detail").addEventListener("input", function (event) {
+    const level = justifyLevel(event.target.value);
+    histogram.setLevel(level, map.getWorldXFrom(), map.getWorldXTo());
   });
-
-
-
 
 
 }());
