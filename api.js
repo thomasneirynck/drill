@@ -137,6 +137,8 @@ this.createSampleData = function (size) {
   const levelsOfDetailBasedOnPixels = Math.log(1024 * 4) / Math.log(2);//assume 1024 pixels
 
   const levels = Math.min(levelsOfDetailBasedOnAll, levelsOfDetailBasedOnPixels);
+  console.debug('levels', levels);
+
 
   return {
     levels: levels,

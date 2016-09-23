@@ -237,6 +237,8 @@ class Histogram extends Evented {
     this._level = null;
     this._levels = null;
     this._results = null;
+    this._inFlightPromise = null;
+
     this._tmpPoint = {x: 0, y: 0};
 
   }
@@ -254,7 +256,6 @@ class Histogram extends Evented {
   }
 
   paint(context2d, viewContext) {
-
     if (!this._results || this._farked) {
       return
     }
@@ -289,18 +290,25 @@ class Histogram extends Evented {
 
     this._level = level;
     this.emitEvent('invalidate', this);
-    this._workerHandle.postMessage({
+    if (this._inFlightPromise){
+      console.log('No longer intersted');
+      this._inFlightPromise.cancel();
+      this._inFlightPromise = null;
+    }
+    this._inFlightPromise = this._workerHandle.postMessage({
       type: 'aggregate',
       level: this._level,
       xFrom: null,
       xTo: null,
-    }).then(response => {
-      this._results = response.results;
-      this.emitEvent('invalidate', this);
+    });
 
+
+    this._inFlightPromise.then(response => {
+      this._results = response.results;
+      this._inFlightPromise = null;
+      this.emitEvent('invalidate', this);
     }).catch(error => {
-      console.error(error);
-      this._results = null;
+      this._inFlightPromise = null;
       this.emitEvent('invalidate', this);
     });
   }
@@ -323,7 +331,6 @@ function promisifyWorker(worker) {
     doNext();
   });
   worker.addEventListener('error', function onError(error) {
-
     inFlight.reject(error.data);
     inFlight = null;
     doNext();
@@ -354,10 +361,22 @@ function promisifyWorker(worker) {
         queueItem.resolve = resolve;
         queueItem.reject = reject;
       });
+      promise.cancel = function () {
+        if (promise !== inFlight) {
+          console.log('not set off yet');
+          const index = requestQueue.indexOf(queueItem);
+          requestQueue.splice(index, 1);
+        }else{
+          console.log('too bad worked already computes it');
+        }
+        queueItem.reject("Cancelled");
+      };
       queueItem.promise = promise;
       requestQueue.unshift(queueItem);
 
       setTimeout(doNext, 0);
+
+
       return promise;
 
     }
@@ -370,7 +389,7 @@ function promisifyWorker(worker) {
 (function () {
 
   const map = new Map("map");
-  const nrOfItems = 100024;
+  const nrOfItems = 10000024;
   const histogram = new Histogram(nrOfItems);
 
   map.setTransformation(map.getWidth() / nrOfItems, map.getHeight() * -1, 0, map.getHeight());
