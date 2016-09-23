@@ -223,10 +223,13 @@ class Histogram extends Evented {
     this._workerHandle = promisifyWorker(new Worker('worker.js'));
     this._farked = false;
 
+    this._metaData = null;
     this._workerHandle.postMessage({
       type: 'create',
       nrOfItems: number
     }).then(response => {
+      console.log('data created', response);
+      this._metaData = response;
       this._levels = response.levels;
       this.emitEvent('invalidate');
     }).catch(error => {
@@ -244,18 +247,22 @@ class Histogram extends Evented {
   }
 
   hasDomain() {
-    return !!this._results;
+    return !!this._metaData;
   }
 
   getWorldMinX() {
-    return (this._results) ? this._results.minX : -Infinity;
+    return (this._metaData) ? this._metaData.minX : -Infinity;
   }
 
   getWorldMaxX() {
-    return (this._results) ? this._results.maxX : -Infinity;
+    return (this._metaData) ? this._metaData.maxX : -Infinity;
   }
 
   paint(context2d, viewContext) {
+
+    //check if the histogram's state matches the viewContext
+
+
     if (!this._results || this._farked) {
       return
     }
@@ -282,7 +289,7 @@ class Histogram extends Evented {
     return this._levels;
   }
 
-  setLevel(level) {
+  setLevel(level, minX, minY) {
 
     if (level === this._level) {
       return;
@@ -367,7 +374,7 @@ function promisifyWorker(worker) {
           const index = requestQueue.indexOf(queueItem);
           requestQueue.splice(index, 1);
         }else{
-          console.log('too bad worked already computes it');
+          console.log('too bad worked is already computing it');
         }
         queueItem.reject("Cancelled");
       };

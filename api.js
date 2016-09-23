@@ -142,9 +142,9 @@ this.createSampleData = function (size) {
 
   return {
     levels: levels,
-    sampleData: sampleData,
     minX: minX,
-    maxX: maxX
+    maxX: maxX,
+    sampleData:sampleData
   };
 
 };

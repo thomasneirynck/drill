@@ -33,7 +33,9 @@ self.onmessage = function (event) {
       dataLoaded = true;
       self.postMessage({
         type: 'createSuccess',
-        levels: sampleDataMeta.levels
+        levels: sampleDataMeta.levels,
+        minX: sampleDataMeta.minX,
+        minY: sampleDataMeta.minY
       });
 
     } else {
