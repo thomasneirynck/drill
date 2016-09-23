@@ -47,8 +47,20 @@ class AffineTransformation {
     out.y = y * this._scaleY + this._translateY;
   }
 
+  forwardX(x) {
+    return x * this._scaleX + this._translateX;
+  }
+
+  getScaleX() {
+    return this._scaleX;
+  }
+
   inverseX(xP) {
     return (xP - this._translateX) / this._scaleX;
+  }
+
+  inverseXLength(xWidth) {
+    return xWidth / this._scaleX;
   }
 
   scaleOnX(xP, scaleFactor) {
@@ -64,6 +76,22 @@ class AffineTransformation {
     this._scaleY = scaleY;
     this._translateX = translateX;
     this._translateY = translateY;
+  }
+
+  scaleOnXRestrictByDomain(xP, scaleFactor, minX, maxX, pixelWidth) {
+
+
+    //todo: this stinks! correction should be a lot better
+    let newScale = this._scaleX * scaleFactor;
+    const x = this.inverseX(xP);
+    const minScale = pixelWidth / (maxX - minX);
+    newScale = Math.max(minScale, newScale);
+    const newTranslate = xP - newScale * x;
+
+
+    this._scaleX = newScale;
+    this._translateX = newTranslate;
+
   }
 }
 
@@ -97,14 +125,40 @@ class Map extends Evented {
     this._context.canvas.addEventListener('mousewheel', mousewheelEvent => {
       const step = 1.1;
       const scaleFactor = mousewheelEvent.wheelDelta > 0 ? step : 1 / step;
-      this._transformation.scaleOnX(mousewheelEvent.offsetX, scaleFactor);
-      this._invalidate();
+      this.zoomOnX(mousewheelEvent.offsetX, scaleFactor);
     });
+
+    this._viewContext = {
+      forwardXY: (x, y, out) => {
+        return this._transformation.forwardXY(x, y, out);
+      }
+    };
 
     window.addEventListener('resize', this.resize.bind(this));
     this.resize();
 
+  }
 
+  getDomain() {
+    //get min domain, max domain
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (let i = 0; i < this._layers.length; i += 1) {
+      if (this._layers[i].hasDomain()) {
+        minX = Math.min(minX, this._layers[i].getWorldMinX());
+        maxX = Math.max(maxX, this._layers[i].getWorldMaxX());
+      }
+    }
+    return (minX !== Infinity && maxX !== -Infinity) ? {min: minX, max: maxX} : {min: 0, max: 0};
+  }
+
+  zoomOnX(pixelX, factor) {
+
+    const domain = this.getDomain();
+
+    this._transformation.scaleOnXRestrictByDomain(pixelX, factor, domain.min, domain.max, this.getWidth());
+
+    this._invalidate();
   }
 
   addLayer(layer) {
@@ -125,7 +179,7 @@ class Map extends Evented {
 
   _paint() {
     for (let i = 0; i < this._layers.length; i += 1) {
-      this._layers[i].paint(this._context, this._transformation);
+      this._layers[i].paint(this._context, this._viewContext);
     }
   }
 
@@ -135,7 +189,6 @@ class Map extends Evented {
     }
     this._frameHandle = requestAnimationFrame(this._render);
   }
-
 
   setTransformation(scaleX, scaleY, translateX, translateY) {
     this._transformation.setTransformation(scaleX, scaleY, translateX, translateY);
@@ -188,7 +241,19 @@ class Histogram extends Evented {
 
   }
 
-  paint(context, transformation) {
+  hasDomain() {
+    return !!this._results;
+  }
+
+  getWorldMinX() {
+    return (this._results) ? this._results.minX : -Infinity;
+  }
+
+  getWorldMaxX() {
+    return (this._results) ? this._results.maxX : -Infinity;
+  }
+
+  paint(context2d, viewContext) {
 
     if (!this._results || this._farked) {
       return
@@ -198,17 +263,17 @@ class Histogram extends Evented {
     const buckets = this._results.buckets;
     let bucket = buckets[0];
 
-    context.beginPath();
-    transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
-    context.moveTo(this._tmpPoint.x, this._tmpPoint.y);
+    context2d.beginPath();
+    viewContext.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
+    context2d.moveTo(this._tmpPoint.x, this._tmpPoint.y);
 
     for (let i = 1; i < levelMeta.numberOfBuckets; i += 1) {
       bucket = buckets[i];
-      transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
-      context.lineTo(this._tmpPoint.x, this._tmpPoint.y);
+      viewContext.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
+      context2d.lineTo(this._tmpPoint.x, this._tmpPoint.y);
     }
-    context.strokeStyle = '#778899';
-    context.stroke();
+    context2d.strokeStyle = '#778899';
+    context2d.stroke();
 
   }
 
@@ -234,6 +299,7 @@ class Histogram extends Evented {
       this.emitEvent('invalidate', this);
 
     }).catch(error => {
+      console.error(error);
       this._results = null;
       this.emitEvent('invalidate', this);
     });
@@ -323,8 +389,8 @@ function promisifyWorker(worker) {
     histogram.setLevel(level, map.getWorldXFrom(), map.getWorldXTo());
   });
 
-
 }());
+
 
 
 

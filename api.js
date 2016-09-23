@@ -8,9 +8,14 @@ class Aggregator {
 
     this._minX = Infinity;
     this._maxX = -Infinity;
+    this._minY = -Infinity;
+    this._maxY = -Infinity;
     for (let i = 0; i < this._xyValues.length; i += 1) {
       this._minX = Math.min(this._minX, this._xyValues[i].x);
       this._maxX = Math.max(this._maxX, this._xyValues[i].x);
+
+      this._minY = Math.min(this._minY, this._xyValues[i].y);
+      this._maxY = Math.max(this._maxY, this._xyValues[i].y);
     }
 
     this._buckets = new Array(2 * Math.pow(2, levels - 1) - 1); //1st value is number of items, second value is aggregation
@@ -40,6 +45,10 @@ class Aggregator {
     }
 
     return {
+      minX: this._minX,
+      maxX: this._maxX,
+      minY: this._minY,
+      maxY: this._maxY,
       levelMeta: levelMeta,
       buckets: buckets
     };
