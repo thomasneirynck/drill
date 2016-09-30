@@ -11,14 +11,22 @@ self.onmessage = function (event) {
   if (dataLoaded) {
 
     if (event.data.type === 'aggregate') {
-
       aggregator.setLevel(event.data.level);
       const results = aggregator.aggregate();
       self.postMessage({
         type: 'aggregateSuccess',
         results: results
       });
+    } else if (event.data.type === "aggregateBestEffort") {
 
+      //select level based on domain
+
+      aggregator.setLevel(event.data.level);
+      const results = aggregator.aggregate();
+      self.postMessage({
+        type: 'aggregateBestEffortSuccess',
+        results: results
+      });
     } else {
       throw new Error(`cannot support ${event.data.type} when data is loaded`);
     }
@@ -35,7 +43,7 @@ self.onmessage = function (event) {
         type: 'createSuccess',
         levels: sampleDataMeta.levels,
         minX: sampleDataMeta.minX,
-        minY: sampleDataMeta.minY
+        maxX: sampleDataMeta.maxX
       });
 
     } else {

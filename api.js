@@ -18,11 +18,12 @@ class Aggregator {
       this._maxY = Math.max(this._maxY, this._xyValues[i].y);
     }
 
-    this._buckets = new Array(2 * Math.pow(2, levels - 1) - 1); //1st value is number of items, second value is aggregation
     this._initializeLevelMeta(levels);
-
-
     this._level = levels - 1;
+
+
+    this._buckets = new Array(2 * Math.pow(2, levels - 1) - 1); //1st value is number of items, second value is aggregation
+    console.log('nr of buckets', this._buckets.length);
     this._initializeBucketsForLevel(this._level);
     this._seed(this._level);//seed with most detailed level
 
@@ -56,8 +57,8 @@ class Aggregator {
   }
 
 
-  _initializeLevelMeta(levels) {
-    this._levelMeta = new Array(levels);
+  _initializeLevelMeta(totalLevels) {
+    this._levelMeta = new Array(totalLevels);
     let startIndex = 0;
     let numberOfBuckets = 1;
     for (let level = 0; level < this._levelMeta.length; level += 1) {
@@ -69,6 +70,7 @@ class Aggregator {
       startIndex = startIndex + numberOfBuckets;
       numberOfBuckets *= 2;
     }
+    console.log('LevelMeta', this._levelMeta);
   }
 
   _initializeBucketsForLevel(level) {
@@ -83,10 +85,11 @@ class Aggregator {
     }
   }
 
-  _seed(level) {
-    const b = Date.now();
+  _seed(level, todoMinX, todoMaxX) {
     let bucketIndex = this._levelMeta[level].startIndex;
     let bucketEnd = this._minX + this._levelMeta[level].bucketWidth;
+
+    //do binary search to data:
     for (let i = 0; i < this._xyValues.length; i += 1) {
       if (this._xyValues[i].x > bucketEnd) {
         bucketEnd += this._levelMeta[level].bucketWidth;
@@ -105,9 +108,9 @@ class Aggregator {
 
 
   _accumulateIntoBucket(bucket, countOther, aggregationOther) {
+    //calculates an average
     bucket.aggregation = (bucket.count * bucket.aggregation + countOther * aggregationOther) / (bucket.count + countOther);
     bucket.count += countOther;
-    // bucket.aggregation = Math.max(aggregationOther, bucket.aggregation);
   }
 
   setLevel(level) {
@@ -134,11 +137,16 @@ this.createSampleData = function (size) {
 
 
   const levelsOfDetailBasedOnAll = Math.ceil(Math.log(maxX - minX) / Math.log(2));
-  const levelsOfDetailBasedOnPixels = Math.log(1024 * 4) / Math.log(2);//assume 1024 pixels
+  console.log('levels of detail for the data', levelsOfDetailBasedOnAll);
 
-  const levels = Math.min(levelsOfDetailBasedOnAll, levelsOfDetailBasedOnPixels);
-  console.debug('levels', levels);
 
+  // const levelsOfDetailBasedOnPixels = Math.log(1024) / Math.log(2);//assume 1024 pixels
+  // const levels = Math.min(levelsOfDetailBasedOnAll, levelsOfDetailBasedOnPixels);
+  const levels = levelsOfDetailBasedOnAll;
+  console.debug('actual selected levels', levels);
+
+
+  console.log("should calculate start offset of course!!!!");
 
   return {
     levels: levels,

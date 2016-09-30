@@ -1,0 +1,28 @@
+level    buckets
+
+ 0      1                       shoot for 1 bucket per pixel
+ 1      2
+ 2      4
+ 3      8
+ 4      16
+ 5      32
+
+
+
+
+
+ - measure pixels
+ - get target-buckets
+ - from there, get level
+
+
+
+
+
+
+
+
+
+
+
+

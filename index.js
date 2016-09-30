@@ -80,7 +80,6 @@ class AffineTransformation {
 
   scaleOnXRestrictByDomain(xP, scaleFactor, minX, maxX, pixelWidth) {
 
-
     //todo: this stinks! correction should be a lot better
     let newScale = this._scaleX * scaleFactor;
     const x = this.inverseX(xP);
@@ -128,12 +127,6 @@ class Map extends Evented {
       this.zoomOnX(mousewheelEvent.offsetX, scaleFactor);
     });
 
-    this._viewContext = {
-      forwardXY: (x, y, out) => {
-        return this._transformation.forwardXY(x, y, out);
-      }
-    };
-
     window.addEventListener('resize', this.resize.bind(this));
     this.resize();
 
@@ -179,7 +172,7 @@ class Map extends Evented {
 
   _paint() {
     for (let i = 0; i < this._layers.length; i += 1) {
-      this._layers[i].paint(this._context, this._viewContext);
+      this._layers[i].paint(this._context, this);
     }
   }
 
@@ -209,6 +202,10 @@ class Map extends Evented {
 
   getWorldXTo() {
     return this._transformation.inverseX(this.getWidth());
+  }
+
+  getTransformation() {
+    return this._transformation;
   }
 
 }
@@ -258,26 +255,50 @@ class Histogram extends Evented {
     return (this._metaData) ? this._metaData.maxX : -Infinity;
   }
 
-  paint(context2d, viewContext) {
-
-    //check if the histogram's state matches the viewContext
+  _updateDomain(map) {
 
 
-    if (!this._results || this._farked) {
+    const dataWidth = this.getWorldMaxX() - this.getWorldMinX();
+    const pixelWidth = dataWidth * map.getTransformation().getScaleX();
+    const pixelsPerBucket = 4;
+    const targetBuckets = pixelWidth / pixelsPerBucket;
+
+    const targetLevel = Math.ceil(Math.log(targetBuckets) / Math.log(2));
+    const level = Math.min(targetLevel, this._metaData.levels - 1);
+
+    this.setDomain(level, map.getWorldXFrom(), map.getWorldXTo());
+
+  }
+
+  paint(context2d, map) {
+
+    if (this._farked) {
       return
     }
 
+    //check if the histogram's state matches the viewContext
+    const transformation = map.getTransformation();
+
+    if (!this._results) {
+      return;
+    }
+
+    this._updateDomain(map);
+
+
+    //----------------------------------------------------------------------
     const levelMeta = this._results.levelMeta;
     const buckets = this._results.buckets;
     let bucket = buckets[0];
 
+
     context2d.beginPath();
-    viewContext.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
+    transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
     context2d.moveTo(this._tmpPoint.x, this._tmpPoint.y);
 
     for (let i = 1; i < levelMeta.numberOfBuckets; i += 1) {
       bucket = buckets[i];
-      viewContext.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
+      transformation.forwardXY(bucket.xStart + levelMeta.bucketWidth / 2, bucket.aggregation, this._tmpPoint);
       context2d.lineTo(this._tmpPoint.x, this._tmpPoint.y);
     }
     context2d.strokeStyle = '#778899';
@@ -289,24 +310,26 @@ class Histogram extends Evented {
     return this._levels;
   }
 
-  setLevel(level, minX, minY) {
+  setDomain(level, minX, maxX) {
 
     if (level === this._level) {
       return;
     }
 
     this._level = level;
-    this.emitEvent('invalidate', this);
+
+
     if (this._inFlightPromise){
       console.log('No longer intersted');
       this._inFlightPromise.cancel();
       this._inFlightPromise = null;
     }
+
     this._inFlightPromise = this._workerHandle.postMessage({
-      type: 'aggregate',
+      type: 'aggregateBestEffort',
       level: this._level,
-      xFrom: null,
-      xTo: null,
+      xFrom: minX,
+      xTo: maxX,
     });
 
 
@@ -318,6 +341,8 @@ class Histogram extends Evented {
       this._inFlightPromise = null;
       this.emitEvent('invalidate', this);
     });
+
+    this.emitEvent('invalidate', this);
   }
 
 }
@@ -374,7 +399,7 @@ function promisifyWorker(worker) {
           const index = requestQueue.indexOf(queueItem);
           requestQueue.splice(index, 1);
         }else{
-          console.log('too bad worked is already computing it');
+          console.log('too bad worked is already coiputing it');
         }
         queueItem.reject("Cancelled");
       };
@@ -396,7 +421,7 @@ function promisifyWorker(worker) {
 (function () {
 
   const map = new Map("map");
-  const nrOfItems = 10000024;
+  const nrOfItems = 100024;
   const histogram = new Histogram(nrOfItems);
 
   map.setTransformation(map.getWidth() / nrOfItems, map.getHeight() * -1, 0, map.getHeight());
@@ -408,12 +433,16 @@ function promisifyWorker(worker) {
   }
 
   const level = justifyLevel(document.getElementById("detail").value);
-  histogram.setLevel(level, map.getWorldXFrom(), map.getWorldXTo());
+  histogram.setDomain(level, map.getWorldXFrom(), map.getWorldXTo());
 
   document.getElementById("detail").addEventListener("input", function (event) {
     const level = justifyLevel(event.target.value);
-    histogram.setLevel(level, map.getWorldXFrom(), map.getWorldXTo());
+    histogram.setDomain(level, map.getWorldXFrom(), map.getWorldXTo());
   });
+
+
+  window.map = map;
+  window.histo = histogram;
 
 }());
 
